@@ -1,0 +1,183 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+# Time series analysis of Moderna stock prices during-pandamic
+
+```{r}
+library(quantmod)
+library(urca)
+library(forecast)
+library(tseries)
+library(fGarch)
+library(zoo)
+library(tseries)
+library(rugarch) 
+```
+
+**Load Data**
+
+```{r}
+data <- read.csv('Moderna 5 Years.csv')
+price <- data$Close
+log_price <- log(data$Close)
+date <- data$Date
+date=as.Date(date,format="%m/%d/%Y")
+df1 <- data.frame(date, price)
+df2 <- data.frame(date, log_price)
+plot(df1,xlab="Time during pandamic", ylab="Stock Closing Price",main="Moderna Stock Price During Pandamic")
+plot(df2,xlab="Time during pandamic", ylab="Log of Stock Closing Price",main="Moderna Log Stock Price During Pandamic")
+```
+
+
+**Decomposition**
+
+
+```{r}
+ts_price <- ts(log_price, frequency=100, start=c(2020))
+de_ts_price <- decompose(ts_price)
+plot(de_ts_price)
+```
+
+
+**Calculate the log-return**
+
+
+```{r}
+##Calculate the log-return
+r = na.omit(diff(log_price))
+n=length(r)
+plot(r, main="Time plot of the daily logged return of price")
+```
+
+
+**Check for the trend**
+
+```{r}
+summary(ur.df(r, type='trend', lags=20, selectlags="BIC"))
+# From the result, we can see that the intercept, which is \alpha, is significantly different from 0. It means that the mean of the time series is not 0, in other words, there is a drift. Also, there is no linear trend for this time series because the coefficient for it is not significant.
+```
+
+
+**Check for the seasonality**
+
+```{r}
+r = na.omit(diff(log_price))
+n=length(r)
+acf(r,main="ACF of the logged return of price",yaxt="n")
+ci=qnorm(c(0.025, 0.975))/sqrt(n)
+text(y=ci,par("usr")[1],labels=round(ci,4),pos=2,xpd=TRUE)
+```
+
+```{r}
+pacf(r,main="PACF of the logged return of price",yaxt="n")
+text(y=ci,par("usr")[1],labels=round(ci,4),pos=2,xpd=TRUE)
+```
+
+```{r}
+spec.pgram(r,main="Series: the logged return of price")
+### We cannot find any evidence for seasonality. 
+```
+
+**Demean**
+
+```{r}
+r1=r-mean(r)
+acf(r1,lag=10,main="ACF of the demeaned logged return of price",yaxt="n")
+text(y=ci,par("usr")[1],labels=round(ci,4),pos=2,xpd=TRUE)
+```
+
+```{r}
+pacf(r1,lag=10,main="PACF of the demeaned logged return of price",yaxt="n")
+text(y=ci,par("usr")[1],labels=round(ci,4),pos=2,xpd=TRUE)
+```
+
+**Difference**
+
+```{r}
+diffr = na.omit(diff(r))
+acf(diffr,main="ACF of the differenced logged return of price",yaxt="n")
+text(y=ci,par("usr")[1],labels=round(ci,4),pos=2,xpd=TRUE)
+```
+
+```{r}
+pacf(diffr,main="PACF of the differenced logged return of price",yaxt="n")
+text(y=ci,par("usr")[1],labels=round(ci,4),pos=2,xpd=TRUE)
+```
+
+
+**Fit the model**
+
+```{r}
+auto.arima(log_price)
+auto.arima(log_return)
+## The best fit model is ARIMA(2,0,2)
+```
+
+```{r}
+fit1 = arima(log_return, order=c(2,0,2))
+summary(fit1)
+```
+
+
+
+```{r}
+MRNAtimeseries <- ts(log_return, frequency = 1)
+forecast_myts = forecast(fit1, h=30, level=0.95)
+plot(forecast_myts, col=4, las=1)
+abline(v=c(1, 1226, 1255), lty="dotted", col=4)
+lines(1226:1255, MRNAtimeseries[1226:1255], lty="dotted", col="red")
+```
+
+```{r}
+##Diagnostic
+res = residuals(fit1)
+shapiro.test(res)
+```
+
+```{r}
+par(mfrow=c(2,1))
+hist(res)
+lines(density(res))
+qqnorm(res)
+qqline(res)
+```
+
+**One-day ahead forecast for the last 30 days of the observations**
+
+```{r}
+# since it is one step ahead prediction, so we need use for loop
+pred_df <- data.frame(NULL)
+for(t in 767:797){
+pred_onestep <- forecast(log_price[1:t], h=1, level=0.95, model =
+fit1)
+pred_df <- rbind(pred_df, data.frame(mean = pred_onestep$mean[1],
+lower = pred_onestep$lower[1], upper = pred_onestep$upper[1]))
+}
+plot(log_price, col=4, las=1)
+left <- 767
+right <- 797
+it <- left:right
+abline(v=c(1, left, right), type = 'l', col=4)
+lines(it, pred_df$mean, col = 'red')
+lines(it, pred_df$lower, col = 'green')
+lines(it, pred_df$upper, col = 'green')
+legend(40, 40, legend=c("Observations", "Prediction", "Bounds of
+CI"),col=c("blue", "red", "green"),lty = 1, cex=0.8)
+```
+
+```{r}
+plot(767:797, log_price[767:797], col=4, las=1, type = 'l', ylim =
+c(3.5,6.0))
+abline(v=c(767, 797), lty="dotted", col=4)
+lines(767:797, pred_df$mean, col = 'red')
+lines(767:797, pred_df$lower, col = 'green')
+lines(767:797, pred_df$upper, col = 'green')
+legend(40, 50, legend=c("Observations", "Prediction", "Bounds of
+CI"),col=c("blue", "red", "green"),lty = 1, cex=0.8)
+
+
+
+```
